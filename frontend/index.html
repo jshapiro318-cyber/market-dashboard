@@ -1,0 +1,945 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Market Intel Dashboard</title>
+<script>
+  window.addEventListener('error', function(e) {
+    const errDiv = document.getElementById('error-overlay') || document.createElement('div');
+    errDiv.id = 'error-overlay';
+    errDiv.style.position = 'fixed';
+    errDiv.style.bottom = '10px';
+    errDiv.style.right = '10px';
+    errDiv.style.background = 'rgba(239, 68, 68, 0.95)';
+    errDiv.style.color = '#fff';
+    errDiv.style.padding = '15px';
+    errDiv.style.borderRadius = '8px';
+    errDiv.style.zIndex = '100000';
+    errDiv.style.fontFamily = 'monospace';
+    errDiv.style.fontSize = '12px';
+    errDiv.style.maxWidth = '500px';
+    errDiv.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
+    errDiv.style.whiteSpace = 'pre-wrap';
+    errDiv.innerText = 'JS Error: ' + e.message + '\nat ' + e.filename + ':' + e.lineno;
+    document.body.appendChild(errDiv);
+  });
+  window.addEventListener('unhandledrejection', function(e) {
+    const errDiv = document.getElementById('error-overlay') || document.createElement('div');
+    errDiv.id = 'error-overlay';
+    errDiv.style.position = 'fixed';
+    errDiv.style.bottom = '10px';
+    errDiv.style.right = '10px';
+    errDiv.style.background = 'rgba(239, 68, 68, 0.95)';
+    errDiv.style.color = '#fff';
+    errDiv.style.padding = '15px';
+    errDiv.style.borderRadius = '8px';
+    errDiv.style.zIndex = '100000';
+    errDiv.style.fontFamily = 'monospace';
+    errDiv.style.fontSize = '12px';
+    errDiv.style.maxWidth = '500px';
+    errDiv.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
+    errDiv.style.whiteSpace = 'pre-wrap';
+    errDiv.innerText = 'Promise Rejection: ' + (e.reason ? e.reason.message || e.reason : e);
+    document.body.appendChild(errDiv);
+  });
+</script>
+<script src="/static/lightweight-charts.standalone.production.js?v=2"></script>
+<script src="/static/chart.js?v=2"></script>
+<style>
+  :root {
+    --bg: #0b0e14; --panel: #121826; --panel-2: #1a2235; --border: #1f2940;
+    --text: #d8e0f2; --muted: #8694b3; --accent: #4f8bff;
+    --green: #22c55e; --red: #ef4444; --yellow: #f59e0b; --purple: #a855f7;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:var(--bg); color:var(--text); font-size:14px; line-height:1.4; }
+  header { padding:14px 20px; background:var(--panel); border-bottom:1px solid var(--border); display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  header h1 { margin:0; font-size:18px; font-weight:600; }
+  .tabs { display:flex; gap:4px; background:var(--panel-2); padding:3px; border-radius:8px; }
+  .tab { background:transparent; border:none; color:var(--muted); padding:6px 14px; border-radius:6px; cursor:pointer; font-size:13px; font-weight:500; }
+  .tab.active { background:var(--accent); color:white; }
+  .api-input { background:var(--panel-2); border:1px solid var(--border); color:var(--text); padding:6px 10px; border-radius:6px; font-size:12px; width:220px; margin-left:auto; }
+  input[type=text],input[type=number] { background:var(--panel-2); border:1px solid var(--border); color:var(--text); padding:8px 12px; border-radius:6px; font-family:inherit; font-size:14px; }
+  input:focus { outline:2px solid var(--accent); outline-offset:-1px; }
+  button { background:var(--accent); border:none; color:white; padding:8px 14px; border-radius:6px; cursor:pointer; font-size:14px; font-weight:500; }
+  button:hover { filter:brightness(1.1); }
+  button.ghost { background:var(--panel-2); color:var(--text); border:1px solid var(--border); }
+  button.danger { background:var(--red); }
+  button.success { background:var(--green); }
+  .container { padding:16px 20px; display:grid; grid-template-columns:minmax(0,2fr) minmax(320px,1fr); gap:16px; }
+  .container.split { grid-template-columns:1fr 1fr; }
+  .container.single { grid-template-columns:1fr; }
+  .panel { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:14px; }
+  .panel + .panel { margin-top:16px; }
+  .panel h2 { margin:0 0 10px; font-size:13px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); font-weight:600; display:flex; justify-content:space-between; align-items:center; }
+  .grid-3 { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+  .stat { background:var(--panel-2); border-radius:6px; padding:10px 12px; }
+  .stat .label { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
+  .stat .value { font-size:18px; font-weight:600; margin-top:2px; }
+  .chart-wrap { height:420px; } #chart { height:100%; }
+  .signal-bias { font-size:28px; font-weight:700; text-transform:uppercase; }
+  .signal-bias.bullish,.signal-bias.lean-bullish { color:var(--green); }
+  .signal-bias.bearish,.signal-bias.lean-bearish { color:var(--red); }
+  .signal-bias.neutral { color:var(--muted); }
+  .confidence-bar { height:8px; background:var(--panel-2); border-radius:4px; overflow:hidden; margin-top:8px; }
+  .confidence-fill { height:100%; background:linear-gradient(90deg,var(--yellow),var(--accent)); transition:width .4s; }
+  .factor { padding:8px 0; border-bottom:1px solid var(--border); }
+  .factor:last-child { border-bottom:none; }
+  .factor-head { display:flex; justify-content:space-between; align-items:center; }
+  .factor-name { font-weight:600; }
+  .factor-score { font-variant-numeric:tabular-nums; font-weight:600; padding:2px 8px; border-radius:4px; background:var(--panel-2); }
+  .factor-score.pos { color:var(--green); } .factor-score.neg { color:var(--red); }
+  .factor-reasons { font-size:12px; color:var(--muted); padding-left:12px; margin:4px 0 0; }
+  .factor-reasons li { margin:2px 0; }
+  .pattern-pill { display:inline-block; padding:4px 10px; border-radius:12px; background:var(--panel-2); border:1px solid var(--border); font-size:12px; margin:3px 4px 3px 0; }
+  .pattern-pill.bullish { border-color:var(--green); color:var(--green); }
+  .pattern-pill.bearish { border-color:var(--red); color:var(--red); }
+  .pattern-pill.indecision { border-color:var(--yellow); color:var(--yellow); }
+  .news-item { padding:10px 0; border-bottom:1px solid var(--border); }
+  .news-item:last-child { border-bottom:none; }
+  .news-title { font-size:13px; font-weight:500; }
+  .news-title a { color:var(--text); text-decoration:none; }
+  .news-title a:hover { color:var(--accent); }
+  .news-meta { font-size:11px; color:var(--muted); margin-top:3px; display:flex; gap:10px; flex-wrap:wrap; }
+  .sent-pill { display:inline-block; padding:1px 6px; border-radius:8px; font-size:10px; font-weight:600; text-transform:uppercase; }
+  .sent-pill.positive,.sent-pill.very-positive { background:rgba(34,197,94,.15); color:var(--green); }
+  .sent-pill.negative,.sent-pill.very-negative { background:rgba(239,68,68,.15); color:var(--red); }
+  .sent-pill.neutral { background:var(--panel-2); color:var(--muted); }
+  .risk-list { color:var(--yellow); font-size:12px; padding-left:18px; margin:6px 0 0; }
+  .levels { display:flex; gap:8px; flex-wrap:wrap; }
+  .level { padding:4px 10px; border-radius:4px; font-size:12px; font-variant-numeric:tabular-nums; }
+  .level.support { background:rgba(34,197,94,.1); color:var(--green); }
+  .level.resistance { background:rgba(239,68,68,.1); color:var(--red); }
+  table.t { width:100%; border-collapse:collapse; font-size:13px; }
+  table.t th { text-align:left; font-size:11px; text-transform:uppercase; color:var(--muted); padding:6px 8px; letter-spacing:.05em; position:sticky; top:0; background:var(--panel); }
+  table.t td { padding:8px; border-top:1px solid var(--border); font-variant-numeric:tabular-nums; }
+  table.t tr.click:hover { background:var(--panel-2); cursor:pointer; }
+  .disclaimer { background:rgba(245,158,11,.08); border:1px solid rgba(245,158,11,.3); color:var(--yellow); padding:10px 14px; border-radius:6px; font-size:12px; margin:16px 20px; }
+  .loading { color:var(--muted); padding:20px; text-align:center; }
+  .error { color:var(--red); padding:16px; font-size:13px; }
+  .pos { color:var(--green); } .neg { color:var(--red); }
+  .row { display:flex; gap:8px; align-items:center; }
+  .row + .row { margin-top:8px; }
+  .muted-sm { font-size:11px; color:var(--muted); }
+  .scroll { max-height:360px; overflow-y:auto; }
+  .scroll-tall { max-height:520px; overflow-y:auto; }
+  @media (max-width:1024px) { .container,.container.split { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Market Intel</h1>
+  <div class="tabs">
+    <button class="tab active" data-view="analyzer">Analyzer</button>
+    <button class="tab" data-view="scanner">Scanner</button>
+    <button class="tab" data-view="portfolio">Portfolio</button>
+    <button class="tab" data-view="wheel">Wheel</button>
+    <button class="tab" data-view="quant">Quant Lab</button>
+    <button class="tab" data-view="analysis">Data Lab</button>
+    <button class="tab" data-view="journal">Journal</button>
+  </div>
+  <input id="apiUrl" class="api-input" type="text" placeholder="API URL (e.g. http://127.0.0.1:8000)" title="Leave blank when served by the backend" />
+</header>
+
+<div class="disclaimer"><strong>Not financial advice.</strong> Signals derived from textbook indicator math + rule-based pattern recognition on free public data. Paper trading only. No system reliably forecasts markets.</div>
+
+<div id="backendBanner" class="disclaimer" style="display:none;background:rgba(239,68,68,.08);border-color:rgba(239,68,68,.3);color:var(--red);">
+  <strong>Backend not reachable.</strong> Start it with <code>cd ~/market-dashboard &amp;&amp; ./run.sh</code> and either open <a href="http://127.0.0.1:8000" target="_blank" style="color:var(--red);text-decoration:underline;">http://127.0.0.1:8000</a> or set the API URL above to <code>http://127.0.0.1:8000</code>.
+</div>
+<div id="configBanner" class="disclaimer" style="display:none;background:rgba(239,68,68,.08);border-color:rgba(239,68,68,.3);color:var(--red);">
+  <strong>Alpaca not configured.</strong> Copy <code>.env.example</code> to <code>.env</code> in <code>~/market-dashboard</code> and paste your <strong>rotated</strong> Alpaca paper-trading keys. Then restart the server. <span id="configDetail" class="muted-sm" style="display:block;margin-top:4px;"></span>
+</div>
+
+<!-- =================== ANALYZER VIEW =================== -->
+<section id="view-analyzer">
+<div class="container">
+  <div>
+    <div class="panel">
+      <div class="row">
+        <input id="ticker" type="text" value="AAPL" autocomplete="off" placeholder="Any ticker e.g. AAPL" style="flex:1;" />
+        <button id="go">Analyze</button>
+      </div>
+    </div>
+    <div class="panel" id="quote-panel"><div class="loading">Enter a ticker above.</div></div>
+    <div class="panel"><h2>Chart · Daily</h2><div class="chart-wrap"><div id="chart"></div></div></div>
+    <div class="panel"><h2>Indicators</h2><div id="indicators" class="grid-3"></div></div>
+    <div class="panel"><h2>Detected Patterns</h2><div id="patterns"></div></div>
+    <div class="panel"><h2>Support / Resistance</h2><div id="levels" class="levels"></div></div>
+    <div class="panel"><h2>Fundamentals · Company &amp; Financials</h2><div id="fundamentals"><div class="loading">—</div></div></div>
+  </div>
+  <div>
+    <div class="panel"><h2>Signal</h2><div id="signal"><div class="loading">—</div></div></div>
+    <div class="panel"><h2>Factor Breakdown</h2><div id="factors"></div></div>
+    <div class="panel"><h2>News + Sentiment</h2><div id="news" class="scroll-tall"><div class="loading">—</div></div></div>
+    <div class="panel"><h2>Paper Trade <span class="muted-sm" id="cashHint"></span></h2>
+      <div class="row">
+        <input id="qBuyShares" type="number" placeholder="shares" step="0.01" min="0" style="width:120px;" />
+        <button class="success" id="quickBuy">Buy</button>
+        <button class="danger" id="quickSell">Sell All</button>
+      </div>
+      <div id="quickTradeMsg" class="muted-sm" style="margin-top:6px;"></div>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- =================== SCANNER VIEW =================== -->
+<section id="view-scanner" hidden>
+<div class="container single">
+  <div class="panel">
+    <h2>Market Scanner <span><span class="muted-sm" id="scannerInfo"></span> <button id="scanRefresh" class="ghost" style="font-size:12px;padding:4px 10px;">Refresh</button></span></h2>
+    <div class="muted-sm" style="margin-bottom:10px;">Ranks ~200 liquid US tickers by composite multi-factor score. Click any row to load it in the Analyzer.</div>
+    <div id="scannerStatus" class="loading">Loading…</div>
+  </div>
+</div>
+<div class="container split">
+  <div class="panel">
+    <h2 style="color:var(--green);">▲ Top Bullish</h2>
+    <div class="scroll-tall"><table class="t" id="bullTable"><thead><tr><th>Ticker</th><th>Last</th><th>%</th><th>RV</th><th>RSI</th><th>Score</th><th>Conf</th><th>Top reason</th></tr></thead><tbody></tbody></table></div>
+  </div>
+  <div class="panel">
+    <h2 style="color:var(--red);">▼ Top Bearish</h2>
+    <div class="scroll-tall"><table class="t" id="bearTable"><thead><tr><th>Ticker</th><th>Last</th><th>%</th><th>RV</th><th>RSI</th><th>Score</th><th>Conf</th><th>Top reason</th></tr></thead><tbody></tbody></table></div>
+  </div>
+</div>
+</section>
+
+<!-- =================== PORTFOLIO VIEW =================== -->
+<section id="view-portfolio" hidden>
+<div class="container">
+  <div>
+    <div class="panel">
+      <h2>Paper Account</h2>
+      <div id="portfolioStats" class="grid-3"></div>
+    </div>
+    <div class="panel">
+      <h2>Pre-Market Brief <span class="muted-sm" id="briefMeta"></span>
+        <button id="briefRun" class="ghost" style="font-size:11px;padding:3px 8px;float:right;">Run Now</button>
+      </h2>
+      <div class="muted-sm" style="margin-bottom:8px;">9:15 ET daily — pulls 30-50 news events, maps to impacted tickers, scores buy/sell/watch.</div>
+      <div id="briefBody"><div class="muted-sm">No brief yet today. Click "Run Now" to generate.</div></div>
+    </div>
+    <div class="panel"><h2>Open Positions</h2><div class="scroll"><table class="t" id="positionsTable"><thead><tr><th>Ticker</th><th>Shares</th><th>Avg Cost</th><th>Last</th><th>Today %</th><th>Market Value</th><th>P&amp;L $</th><th>P&amp;L %</th><th>Opened</th><th></th></tr></thead><tbody></tbody></table></div></div>
+    <div class="panel"><h2>Trade History</h2><div class="scroll-tall"><table class="t" id="tradesTable"><thead><tr><th>Time</th><th>Side</th><th>Ticker</th><th>Shares</th><th>Price</th><th>$ Net</th><th>Auto</th><th>Reason</th></tr></thead><tbody></tbody></table></div></div>
+    <div class="panel"><h2>Auto-Trader Runs</h2><div class="scroll-tall" id="autoRuns"><div class="loading">No runs yet.</div></div></div>
+  </div>
+  <div>
+    <div class="panel">
+      <h2>Manual Trade</h2>
+      <div class="row"><input id="mTicker" type="text" placeholder="Ticker" style="flex:1;" /></div>
+      <div class="row"><input id="mShares" type="number" placeholder="Shares" step="0.01" min="0" style="flex:1;" /></div>
+      <div class="row"><button class="success" id="mBuy" style="flex:1;">Buy</button><button class="danger" id="mSell" style="flex:1;">Sell</button></div>
+      <div id="manualMsg" class="muted-sm" style="margin-top:8px;"></div>
+    </div>
+    <div class="panel">
+      <h2>Trading Agent</h2>
+      <div id="autoStatus"><div class="loading">—</div></div>
+      <div class="muted-sm" style="margin:10px 0 4px;color:var(--text);"><strong style="color:var(--text);">9:45 AM ET — Research</strong></div>
+      <div class="row">
+        <button id="researchDry" class="ghost" style="flex:1;">Dry-Run</button>
+        <button id="researchLive" class="danger" style="flex:1;">Run Live</button>
+      </div>
+      <div class="muted-sm" style="margin:10px 0 4px;color:var(--text);"><strong style="color:var(--text);">10:00 AM ET — Trade</strong></div>
+      <div class="row">
+        <button id="tradeDry" class="ghost" style="flex:1;">Dry-Run</button>
+        <button id="tradeLive" class="danger" style="flex:1;">Run Live</button>
+      </div>
+      <div class="muted-sm" style="margin:10px 0 4px;color:var(--text);"><strong style="color:var(--text);">4:15 PM ET — Journal</strong></div>
+      <div class="row">
+        <button id="journalRun" class="success" style="flex:1;">Write Today's Journal</button>
+      </div>
+      <div id="autoRunMsg" class="muted-sm" style="margin-top:8px;"></div>
+    </div>
+    <div class="panel">
+      <h2>My Watchlist <span class="muted-sm" id="wlCount"></span></h2>
+      <div class="muted-sm" style="margin-bottom:8px;">Tickers here are always scanned, news-pulsed, and considered as priority candidates.</div>
+      <div class="row">
+        <input id="wlInput" type="text" placeholder="e.g. AAPL, MSFT, NVDA" style="flex:1;" />
+        <button class="success" id="wlAdd">Add</button>
+      </div>
+      <div id="wlPills" style="margin-top:10px;"></div>
+      <div id="wlMsg" class="muted-sm" style="margin-top:8px;"></div>
+    </div>
+    <div class="panel">
+      <h2>Reset Account</h2>
+      <div class="muted-sm" style="margin-bottom:8px;">Restore to $100,000 cash, clear all positions and trades.</div>
+      <button id="resetBtn" class="danger">Reset to $100k</button>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- =================== WHEEL VIEW =================== -->
+<section id="view-wheel" hidden>
+<div class="container" style="grid-template-columns:1fr 380px;">
+  <div>
+    <div class="panel">
+      <h2>Active Wheels <span><span class="muted-sm" id="wheelTotalPremium"></span> <button id="wheelTickAll" class="ghost" style="font-size:12px;padding:4px 10px;">Tick all now</button></span></h2>
+      <div id="wheelList"><div class="loading">No wheels active.</div></div>
+    </div>
+    <div class="panel">
+      <h2>Recent Wheel Activity <span><button id="wheelLegsRefresh" class="ghost" style="font-size:11px;padding:3px 8px;">↻</button></span></h2>
+      <div class="scroll-tall"><table class="t" id="wheelLegsTable"><thead><tr><th>Time</th><th>Ticker</th><th>Type</th><th>Side</th><th>Strike</th><th>Exp</th><th>Price</th><th>Net $</th><th>Reason</th></tr></thead><tbody></tbody></table></div>
+    </div>
+  </div>
+  <div>
+    <div class="panel">
+      <h2>Start a Wheel</h2>
+      <div class="muted-sm" style="margin-bottom:10px;line-height:1.5;">
+        Begins with a cash-secured put 10% OTM, 2–4 weeks out. First tick (manual or scheduled) places the order. Requires options trading enabled on your Alpaca account.
+      </div>
+      <div class="row"><input id="wheelTicker" type="text" placeholder="Ticker (e.g. AAPL)" style="flex:1;" /></div>
+      <div class="row">
+        <button id="wheelStart" class="success" style="flex:1;">Start</button>
+      </div>
+      <div id="wheelMsg" class="muted-sm" style="margin-top:8px;"></div>
+    </div>
+    <div class="panel">
+      <h2>Options Eligibility</h2>
+      <div id="optionsEligibility" class="muted-sm">Checking…</div>
+    </div>
+    <div class="panel">
+      <h2>Strategy Rules</h2>
+      <ul class="muted-sm" style="padding-left:18px;line-height:1.6;margin:0;">
+        <li>Cash-secured put 10% OTM, 14-28 DTE</li>
+        <li>Covered call 10% OTM (never below cost basis), 14-28 DTE</li>
+        <li>Close early at 50% of max profit, then sell new</li>
+        <li>Auto-rolls between stages on assignment / call-away</li>
+        <li>Polls every 15 min during market hours (9:30 AM - 4:00 PM ET)</li>
+      </ul>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- =================== QUANT LAB VIEW =================== -->
+<section id="view-quant" hidden>
+<div class="container">
+  <div>
+    <div class="panel">
+      <h2>Pairs Trading Backtest Simulator</h2>
+      <div class="row" style="gap:12px;">
+        <input id="qTicker1" type="text" value="AAPL" placeholder="Ticker 1 (e.g. AAPL)" style="flex:1;" />
+        <input id="qTicker2" type="text" value="MSFT" placeholder="Ticker 2 (e.g. MSFT)" style="flex:1;" />
+        <select id="qPeriod" style="background:var(--panel-2);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:6px;font-family:inherit;font-size:14px;width:120px;">
+          <option value="3mo">3 Months</option>
+          <option value="6mo">6 Months</option>
+          <option value="1y" selected>1 Year</option>
+          <option value="2y">2 Years</option>
+        </select>
+        <input id="qWindow" type="number" value="20" placeholder="Window" style="width:100px;" />
+        <button id="qRunBtn" class="success">Run Backtest</button>
+      </div>
+      <div id="quantBacktestMsg" class="muted-sm" style="margin-top:6px;"></div>
+    </div>
+    
+    <div class="panel">
+      <h2>Quant Performance Chart · Cumulative Returns</h2>
+      <div class="chart-wrap" style="height:350px;">
+        <div id="quantChart" style="height:100%;"></div>
+      </div>
+    </div>
+    
+    <div class="panel">
+      <h2>Financial Modeling Suite (DCF, Sensitivity &amp; Monte Carlo)</h2>
+      <div class="row" style="gap:12px;margin-bottom:15px;">
+        <input id="dcfTicker" type="text" value="META" placeholder="Ticker (e.g. META)" style="flex:1;" />
+        <input id="dcfGrowth" type="text" placeholder="Growth % (optional)" style="width:120px;" />
+        <input id="dcfWacc" type="text" placeholder="WACC % (optional)" style="width:120px;" />
+        <button id="dcfRunBtn" class="success">Run DCF Model</button>
+      </div>
+      
+      <div id="dcfLoading" class="loading" style="display:none;padding:20px;text-align:center;color:var(--yellow);">Running DCF Valuation...</div>
+      <div id="dcfError" class="error" style="display:none;padding:12px;margin-bottom:15px;background:rgba(239, 68, 68, 0.15);border:1px solid var(--red);border-radius:6px;color:var(--red);font-weight:600;"></div>
+      
+      <div id="dcfResults" style="display:none;">
+        <div class="grid-3" style="margin-bottom:15px;">
+          <div class="stat"><div class="label">Implied DCF Price</div><div class="value" id="dcfImpliedPrice">—</div></div>
+          <div class="stat"><div class="label">Current Price</div><div class="value" id="dcfCurrentPrice">—</div></div>
+          <div class="stat"><div class="label">DCF Upside</div><div class="value" id="dcfUpside">—</div></div>
+          <div class="stat"><div class="label">Estimated WACC</div><div class="value" id="dcfWaccVal">—</div></div>
+          <div class="stat"><div class="label">FCF Growth Rate</div><div class="value" id="dcfGrowthVal">—</div></div>
+          <div class="stat"><div class="label">Undervalued Prob</div><div class="value" id="dcfMcProb">—</div></div>
+        </div>
+        
+        <div class="row" style="gap:15px;align-items:stretch;margin-bottom:15px;">
+          <div style="flex:1;min-width:260px;background:var(--panel-2);border:1px solid var(--border);border-radius:6px;padding:12px;">
+            <h3 style="margin-top:0;">Scenario Projections</h3>
+            <table class="t" style="font-size:12px;width:100%;">
+              <thead>
+                <tr>
+                  <th>Scenario</th>
+                  <th>Growth</th>
+                  <th>WACC</th>
+                  <th>DCF Price</th>
+                  <th>Upside</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr id="scenBest">
+                  <td>Best Case</td>
+                  <td class="gVal">—</td>
+                  <td class="wVal">—</td>
+                  <td class="pVal">—</td>
+                  <td class="uVal">—</td>
+                </tr>
+                <tr id="scenBase">
+                  <td>Base Case</td>
+                  <td class="gVal">—</td>
+                  <td class="wVal">—</td>
+                  <td class="pVal">—</td>
+                  <td class="uVal">—</td>
+                </tr>
+                <tr id="scenWorst">
+                  <td>Worst Case</td>
+                  <td class="gVal">—</td>
+                  <td class="wVal">—</td>
+                  <td class="pVal">—</td>
+                  <td class="uVal">—</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          
+          <div style="flex:1;min-width:260px;background:var(--panel-2);border:1px solid var(--border);border-radius:6px;padding:12px;">
+            <h3 style="margin-top:0;">Monte Carlo stats</h3>
+            <div style="font-size:12px;line-height:1.8;">
+              <div><strong>Mean Valuation:</strong> <span id="mcMean" style="float:right;color:var(--text);font-family:monospace;">—</span></div>
+              <div style="border-top:1px solid var(--border);margin-top:4px;padding-top:4px;"><strong>Median Valuation:</strong> <span id="mcMedian" style="float:right;color:var(--text);font-family:monospace;">—</span></div>
+              <div style="border-top:1px solid var(--border);margin-top:4px;padding-top:4px;"><strong>Std Deviation:</strong> <span id="mcStdDev" style="float:right;color:var(--text);font-family:monospace;">—</span></div>
+              <div style="border-top:1px solid var(--border);margin-top:4px;padding-top:4px;"><strong>90% Confidence Interval:</strong> <span id="mcCi90" style="float:right;color:var(--yellow);font-family:monospace;">—</span></div>
+              <div style="border-top:1px solid var(--border);margin-top:4px;padding-top:4px;"><strong>95% Confidence Interval:</strong> <span id="mcCi95" style="float:right;color:var(--yellow);font-family:monospace;">—</span></div>
+            </div>
+          </div>
+        </div>
+        
+        <div>
+          <h3>Sensitivity analysis (Implied Price vs. WACC &amp; Terminal Growth)</h3>
+          <div class="scroll">
+            <table class="t" id="dcfSensitivityTable" style="font-size:11px;text-align:center;width:100%;">
+              <thead>
+                <!-- Populated dynamically -->
+              </thead>
+              <tbody>
+                <!-- Populated dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Equity Research Report Generator</h2>
+      <div class="row" style="gap:12px;margin-bottom:15px;">
+        <input id="researchTicker" type="text" value="META" placeholder="Ticker (e.g. META)" style="flex:1;" />
+        <button id="researchRunBtn" class="success">Generate Report</button>
+      </div>
+      
+      <div id="researchLoading" class="loading" style="display:none;padding:20px;text-align:center;color:var(--yellow);">Gathering filings, analyzing catalysts, and compiling Wall Street-grade report...</div>
+      <div id="researchError" class="error" style="display:none;padding:12px;margin-bottom:15px;background:rgba(239, 68, 68, 0.15);border:1px solid var(--red);border-radius:6px;color:var(--red);font-weight:600;"></div>
+      
+      <div id="researchResults" style="display:none;">
+        <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <div id="researchRatingBadge" style="font-size:16px;font-weight:bold;padding:6px 12px;border-radius:4px;color:var(--bg);background:var(--green);font-family:sans-serif;">RATING: BUY</div>
+          <button id="researchCopyBtn" class="ghost" style="font-size:12px;padding:4px 8px;">Copy to Clipboard</button>
+        </div>
+        <div id="researchReportBody" class="markdown-body" style="font-size:13px;line-height:1.6;background:var(--panel-2);border:1px solid var(--border);border-radius:6px;padding:15px;max-height:500px;overflow-y:auto;white-space:pre-wrap;font-family:monospace;color:var(--text-light);">
+          <!-- Markdown report goes here -->
+        </div>
+      </div>
+    </div>
+    
+    <div class="panel">
+      <h2>Trades Executed</h2>
+      <div class="scroll-tall">
+        <table class="t" id="quantTradesTable">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Action</th>
+              <th>Ticker 1 Price</th>
+              <th>Ticker 2 Price</th>
+              <th>Z-Score</th>
+              <th>Equity</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td colspan="6" class="muted-sm" style="text-align:center;padding:20px;">Run a backtest to see trade history.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  
+  <div>
+    <div class="panel">
+      <h2>Quant Context Manager</h2>
+      <div id="quantContextContent" class="muted-sm" style="line-height:1.6;font-size:12px;">Loading quant parameters...</div>
+    </div>
+    
+    <div class="panel">
+      <h2>Performance &amp; Risk Metrics</h2>
+      <div id="quantMetrics" class="grid-3">
+        <div class="stat"><div class="label">Sharpe Ratio</div><div class="value" id="qmSharpe">—</div></div>
+        <div class="stat"><div class="label">Max Drawdown</div><div class="value" id="qmDrawdown">—</div></div>
+        <div class="stat"><div class="label">Win Rate</div><div class="value" id="qmWinRate">—</div></div>
+        <div class="stat"><div class="label">Total Return</div><div class="value" id="qmReturn">—</div></div>
+        <div class="stat"><div class="label">95% VaR (Daily)</div><div class="value" id="qmVaR">—</div></div>
+        <div class="stat"><div class="label">Latency</div><div class="value" id="qmLatency">—</div></div>
+      </div>
+      <div class="muted-sm" style="margin-top:10px;" id="qmCorrelation"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Ultimate Quant Stock Picks</h2>
+      <div class="muted-sm" style="margin-bottom:10px;">Selects and ranks top stocks by combining multi-factor indicator math, candlestick patterns, news sentiment (Alpaca + NewsAPI), and fundamentals.</div>
+      <div id="quantPicksStatus" class="loading">Loading picks…</div>
+      <div class="scroll" id="quantPicksScroll" style="display:none;max-height:220px;">
+        <table class="t" id="quantPicksTable">
+          <thead>
+            <tr>
+              <th>Ticker</th>
+              <th>Score</th>
+              <th>Bias</th>
+              <th>Sentiment</th>
+              <th>DCF Price</th>
+              <th>DCF Upside</th>
+              <th>P/E</th>
+              <th>ROE</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <button class="ghost" id="qRefreshPicksBtn" style="font-size:11px;padding:4px 10px;margin-top:10px;width:100%;">Re-run Stock Picker</button>
+    </div>
+
+    <div class="panel">
+      <h2>Quant Excellence Console</h2>
+      <div id="quantExcellenceStatus" class="muted-sm" style="line-height:1.6;margin-bottom:12px;">
+        <ul style="padding-left:18px;margin:0;">
+          <li>Models validated: <strong style="color:var(--yellow);" id="qchkModel">PENDING</strong></li>
+          <li>Performance verified: <strong style="color:var(--yellow);" id="qchkPerf">PENDING</strong></li>
+          <li>Risks controlled: <strong style="color:var(--yellow);" id="qchkRisk">PENDING</strong></li>
+          <li>Systems robust: <strong style="color:var(--yellow);" id="qchkSystem">PENDING</strong></li>
+          <li>Compliance met: <strong style="color:var(--yellow);" id="qchkCompliance">PENDING</strong></li>
+        </ul>
+      </div>
+      <button class="danger" id="quantDeployBtn" style="width:100%;">Deploy Strategy</button>
+      <div id="quantDeployMsg" class="muted-sm" style="margin-top:8px;padding:8px;background:var(--panel-2);border-radius:4px;display:none;border:1px solid var(--border);"></div>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- =================== DATA LAB VIEW =================== -->
+<section id="view-analysis" hidden>
+
+<!-- ── Extra styles for Data Lab ── -->
+<style>
+  .da-layout { display:grid; grid-template-columns:280px minmax(0,1fr); gap:0; height:calc(100vh - 120px); }
+  .da-sidebar { background:var(--panel); border-right:1px solid var(--border); display:flex; flex-direction:column; overflow-y:auto; }
+  .da-main { display:flex; flex-direction:column; overflow:hidden; }
+  /* Sidebar sections */
+  .da-section { padding:14px 16px; border-bottom:1px solid var(--border); }
+  .da-section-title { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.1em; color:var(--muted); margin-bottom:10px; }
+  /* Agent cards */
+  .agent-card { display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:8px; cursor:pointer; border:1px solid transparent; margin-bottom:6px; transition:all .2s; }
+  .agent-card:hover { background:var(--panel-2); border-color:var(--border); }
+  .agent-card.active { background:rgba(79,139,255,.12); border-color:rgba(79,139,255,.4); }
+  .agent-icon { width:34px; height:34px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:16px; flex-shrink:0; }
+  .agent-info { flex:1; min-width:0; }
+  .agent-name { font-size:12px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .agent-desc { font-size:10px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .agent-badge { font-size:9px; font-weight:700; padding:2px 6px; border-radius:10px; text-transform:uppercase; }
+  .badge-idle { background:var(--panel-2); color:var(--muted); }
+  .badge-active { background:rgba(79,139,255,.2); color:var(--accent); animation:pulse 1.5s infinite; }
+  .badge-done { background:rgba(34,197,94,.15); color:var(--green); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+  /* Upload dropzone */
+  .dropzone { border:2px dashed var(--border); border-radius:8px; padding:16px 10px; text-align:center; cursor:pointer; transition:all .2s; }
+  .dropzone:hover, .dropzone.drag-over { border-color:var(--accent); background:rgba(79,139,255,.06); }
+  .dropzone-icon { font-size:22px; margin-bottom:6px; }
+  .dropzone-text { font-size:12px; color:var(--muted); }
+  /* Dataset list */
+  .dataset-item { display:flex; align-items:center; gap:8px; padding:7px 8px; border-radius:6px; cursor:pointer; border:1px solid transparent; margin-bottom:4px; transition:all .15s; }
+  .dataset-item:hover { background:var(--panel-2); }
+  .dataset-item.selected { background:rgba(79,139,255,.1); border-color:rgba(79,139,255,.35); }
+  .dataset-item-name { flex:1; font-size:12px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .dataset-item-size { font-size:10px; color:var(--muted); }
+  .dataset-del { background:none; border:none; color:var(--muted); padding:2px 4px; border-radius:4px; cursor:pointer; font-size:12px; }
+  .dataset-del:hover { color:var(--red); background:rgba(239,68,68,.1); }
+  /* Output tabs */
+  .da-tab-bar { display:flex; gap:2px; padding:10px 16px; background:var(--panel); border-bottom:1px solid var(--border); flex-shrink:0; overflow-x:auto; }
+  .da-tab-btn { background:transparent; border:none; color:var(--muted); padding:6px 14px; border-radius:6px; cursor:pointer; font-size:12px; font-weight:600; white-space:nowrap; }
+  .da-tab-btn.active { background:var(--panel-2); color:var(--text); }
+  .da-tab-content { flex:1; overflow-y:auto; padding:16px; }
+  /* Sub-panes */
+  .da-pane { display:none; } .da-pane.visible { display:block; }
+  /* Stats grid */
+  .stats-kpi { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:16px; }
+  @media(max-width:900px){ .stats-kpi { grid-template-columns:repeat(2,1fr); } }
+  /* Quality score ring */
+  .quality-ring-wrap { display:flex; align-items:center; gap:24px; margin-bottom:16px; padding:16px; background:var(--panel-2); border-radius:10px; border:1px solid var(--border); }
+  .quality-ring { position:relative; width:90px; height:90px; flex-shrink:0; }
+  .quality-ring svg { transform:rotate(-90deg); }
+  .quality-ring-label { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+  .quality-ring-score { font-size:20px; font-weight:700; line-height:1; }
+  .quality-ring-grade { font-size:11px; color:var(--muted); }
+  .quality-ring-info { flex:1; }
+  .quality-ring-info h3 { margin:0 0 4px; font-size:15px; }
+  .quality-ring-info p { margin:0; font-size:12px; color:var(--muted); line-height:1.5; }
+  /* Quality column grid */
+  .col-quality-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:10px; margin-bottom:16px; }
+  .col-quality-card { background:var(--panel-2); border-radius:8px; padding:10px 12px; border-left:3px solid var(--border); }
+  .col-quality-card.grade-A { border-left-color:var(--green); }
+  .col-quality-card.grade-B { border-left-color:#4ade80; }
+  .col-quality-card.grade-C { border-left-color:var(--yellow); }
+  .col-quality-card.grade-D { border-left-color:var(--red); }
+  .col-q-name { font-size:12px; font-weight:600; margin-bottom:4px; }
+  .col-q-bar { height:5px; background:var(--border); border-radius:3px; margin:5px 0; overflow:hidden; }
+  .col-q-fill { height:100%; border-radius:3px; }
+  .col-q-meta { font-size:10px; color:var(--muted); }
+  .col-q-issue { font-size:10px; color:var(--yellow); margin-top:3px; }
+  /* Hypothesis cards */
+  .hyp-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:12px; }
+  .hyp-card { background:var(--panel-2); border:1px solid var(--border); border-radius:10px; padding:14px; display:flex; flex-direction:column; gap:6px; }
+  .hyp-id { font-size:10px; font-weight:700; color:var(--accent); text-transform:uppercase; }
+  .hyp-title { font-size:13px; font-weight:600; line-height:1.35; }
+  .hyp-statement { font-size:11px; color:var(--muted); line-height:1.5; flex:1; }
+  .hyp-footer { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-top:4px; }
+  .hyp-badge { font-size:9px; font-weight:700; padding:2px 7px; border-radius:10px; text-transform:uppercase; }
+  .conf-high { background:rgba(34,197,94,.15); color:var(--green); }
+  .conf-medium { background:rgba(245,158,11,.15); color:var(--yellow); }
+  .conf-low { background:rgba(239,68,68,.15); color:var(--red); }
+  .type-badge { background:rgba(79,139,255,.15); color:var(--accent); }
+  .priority-high { background:rgba(168,85,247,.15); color:var(--purple); }
+  .priority-medium { background:var(--panel); color:var(--muted); }
+  .hyp-method { font-size:10px; color:var(--muted); font-style:italic; }
+  /* Chart grid */
+  .chart-grid-2x2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  @media(max-width:900px){ .chart-grid-2x2 { grid-template-columns:1fr; } }
+  .chart-panel { background:var(--panel-2); border:1px solid var(--border); border-radius:8px; padding:12px; }
+  .chart-panel h3 { margin:0 0 10px; font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); font-weight:700; }
+  .chart-canvas-wrap { position:relative; height:230px; }
+  /* Stat item */
+  .stat-item-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:8px; margin-bottom:16px; }
+  .corr-pair { display:flex; justify-content:space-between; align-items:center; padding:7px 10px; border-radius:6px; background:var(--panel-2); margin-bottom:6px; font-size:12px; }
+  .corr-bar-wrap { width:80px; height:6px; background:var(--border); border-radius:3px; overflow:hidden; }
+  .corr-bar { height:100%; border-radius:3px; }
+  /* Feature importance */
+  .feat-item { display:flex; align-items:center; gap:10px; padding:6px 0; border-bottom:1px solid var(--border); font-size:12px; }
+  .feat-item:last-child { border:none; }
+  .feat-name { width:120px; font-weight:500; }
+  .feat-bar-wrap { flex:1; height:8px; background:var(--border); border-radius:4px; overflow:hidden; }
+  .feat-bar { height:100%; border-radius:4px; background:linear-gradient(90deg,var(--accent),var(--purple)); }
+  .feat-val { width:50px; text-align:right; color:var(--muted); }
+  /* Console */
+  .da-console { font-size:12.5px; line-height:1.6; background:#0d1117; border:1px solid var(--border); border-radius:8px; padding:16px; max-height:520px; overflow-y:auto; white-space:pre-wrap; font-family:"JetBrains Mono","Fira Code",ui-monospace,monospace; color:#e6edf3; margin:0; }
+  /* Rec list */
+  .rec-list { list-style:none; margin:0; padding:0; }
+  .rec-list li { padding:8px 12px; background:var(--panel-2); border-radius:6px; margin-bottom:6px; font-size:12px; border-left:3px solid var(--yellow); color:var(--text); }
+  .model-card { background:var(--panel-2); border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:8px; }
+  .model-card h4 { margin:0 0 4px; font-size:13px; }
+  .model-card p { margin:0; font-size:11px; color:var(--muted); }
+</style>
+
+<div class="da-layout">
+  <!-- ─── LEFT SIDEBAR ─────────────────────────────────────── -->
+  <div class="da-sidebar">
+
+    <!-- Sub-Agents -->
+    <div class="da-section">
+      <div class="da-section-title">Sub-Agents</div>
+
+      <div class="agent-card" id="agent-explorer" onclick="runAgent('explorer')">
+        <div class="agent-icon" style="background:rgba(79,139,255,.15);">🔍</div>
+        <div class="agent-info">
+          <div class="agent-name">Data Explorer</div>
+          <div class="agent-desc">Stats, schema, preview</div>
+        </div>
+        <span class="agent-badge badge-idle" id="badge-explorer">idle</span>
+      </div>
+
+      <div class="agent-card" id="agent-stats" onclick="runAgent('stats')">
+        <div class="agent-icon" style="background:rgba(168,85,247,.15);">📐</div>
+        <div class="agent-info">
+          <div class="agent-name">Statistical Analysis</div>
+          <div class="agent-desc">Correlations, variance, skew</div>
+        </div>
+        <span class="agent-badge badge-idle" id="badge-stats">idle</span>
+      </div>
+
+      <div class="agent-card" id="agent-predictive" onclick="runAgent('predictive')">
+        <div class="agent-icon" style="background:rgba(245,158,11,.15);">🤖</div>
+        <div class="agent-info">
+          <div class="agent-name">Predictive Modeling</div>
+          <div class="agent-desc">Feature importance, model recs</div>
+        </div>
+        <span class="agent-badge badge-idle" id="badge-predictive">idle</span>
+      </div>
+
+      <div class="agent-card" id="agent-viz" onclick="runAgent('viz')">
+        <div class="agent-icon" style="background:rgba(34,197,94,.15);">📊</div>
+        <div class="agent-info">
+          <div class="agent-name">Visualization Specialist</div>
+          <div class="agent-desc">Dashboard of all chart types</div>
+        </div>
+        <span class="agent-badge badge-idle" id="badge-viz">idle</span>
+      </div>
+
+      <div class="agent-card" id="agent-quality" onclick="runAgent('quality')">
+        <div class="agent-icon" style="background:rgba(239,68,68,.15);">🛡️</div>
+        <div class="agent-info">
+          <div class="agent-name">Quality Assurance</div>
+          <div class="agent-desc">Outliers, missing data, dupes</div>
+        </div>
+        <span class="agent-badge badge-idle" id="badge-quality">idle</span>
+      </div>
+
+      <div class="agent-card" id="agent-hyp" onclick="runAgent('hypothesis')">
+        <div class="agent-icon" style="background:rgba(34,211,238,.12);">💡</div>
+        <div class="agent-info">
+          <div class="agent-name">Hypothesis Generator</div>
+          <div class="agent-desc">Research insights & tests</div>
+        </div>
+        <span class="agent-badge badge-idle" id="badge-hypothesis">idle</span>
+      </div>
+
+      <div class="agent-card" id="agent-report" onclick="runAgent('report')">
+        <div class="agent-icon" style="background:rgba(255,255,255,.05);">📄</div>
+        <div class="agent-info">
+          <div class="agent-name">Report Writer</div>
+          <div class="agent-desc">Executive Markdown report</div>
+        </div>
+        <span class="agent-badge badge-idle" id="badge-report">idle</span>
+      </div>
+    </div>
+
+    <!-- Code Generator -->
+    <div class="da-section">
+      <div class="da-section-title">Code Generator</div>
+      <div style="display:flex;gap:6px;margin-bottom:8px;">
+        <select id="codeLangSelect" style="flex:1;background:var(--panel-2);border:1px solid var(--border);color:var(--text);padding:6px;border-radius:6px;font-family:inherit;font-size:12px;">
+          <option value="python">Python</option>
+          <option value="r">R (Tidyverse)</option>
+          <option value="sql">SQL</option>
+          <option value="javascript">JavaScript</option>
+        </select>
+        <select id="codeTypeSelect" style="flex:1;background:var(--panel-2);border:1px solid var(--border);color:var(--text);padding:6px;border-radius:6px;font-family:inherit;font-size:12px;">
+          <option value="exploratory">EDA</option>
+          <option value="cleaning">Cleaning</option>
+          <option value="visualization">Visualization</option>
+          <option value="ml">ML Pipeline</option>
+          <option value="clustering">Clustering</option>
+        </select>
+      </div>
+      <button id="runCodeBtn" style="width:100%;font-size:12px;padding:7px;">Generate Code</button>
+
+      <!-- Hypothesis domain -->
+      <div style="margin-top:12px;">
+        <label style="font-size:10px;color:var(--muted);font-weight:700;display:block;margin-bottom:4px;text-transform:uppercase;">Hypothesis Domain</label>
+        <select id="hypDomainSelect" style="width:100%;background:var(--panel-2);border:1px solid var(--border);color:var(--text);padding:6px;border-radius:6px;font-family:inherit;font-size:12px;">
+          <option value="general">General</option>
+          <option value="churn-prediction">Churn Prediction</option>
+          <option value="user-segmentation">User Segmentation</option>
+          <option value="revenue-analysis">Revenue Analysis</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Dataset Manager -->
+    <div class="da-section" style="flex:1;">
+      <div class="da-section-title">Dataset Manager</div>
+
+      <div class="dropzone" id="daDropzone" onclick="document.getElementById('csvFileInput').click()">
+        <input type="file" id="csvFileInput" accept=".csv" style="display:none;" />
+        <div class="dropzone-icon">📂</div>
+        <div class="dropzone-text">Drop CSV here or click to browse</div>
+        <div id="fileUploadStatus" class="muted-sm" style="margin-top:6px;font-size:10px;"></div>
+      </div>
+
+      <button id="loadSampleBtn" class="success" style="width:100%;margin:10px 0 6px;font-size:12px;padding:7px;">Load Sample Dataset</button>
+
+      <div id="datasetList"><div class="muted-sm" style="font-size:11px;padding:4px;">No datasets loaded yet.</div></div>
+    </div>
+  </div>
+
+  <!-- ─── MAIN OUTPUT AREA ──────────────────────────────────── -->
+  <div class="da-main">
+    <!-- Status bar -->
+    <div style="padding:8px 16px;background:var(--panel);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;flex-shrink:0;">
+      <span style="font-size:11px;color:var(--muted);">Active Dataset:</span>
+      <span id="activeDatasetLabel" style="font-size:12px;font-weight:600;color:var(--accent);">None selected</span>
+      <span style="margin-left:auto;font-size:11px;color:var(--muted);" id="daStatusMsg"></span>
+    </div>
+
+    <!-- Output tabs -->
+    <div class="da-tab-bar">
+      <button class="da-tab-btn active" data-pane="pane-preview" onclick="switchDaPane('pane-preview')">📋 Preview</button>
+      <button class="da-tab-btn" data-pane="pane-insights" onclick="switchDaPane('pane-insights')">📈 Insights & Stats</button>
+      <button class="da-tab-btn" data-pane="pane-charts" onclick="switchDaPane('pane-charts')">📊 Charts Dashboard</button>
+      <button class="da-tab-btn" data-pane="pane-quality" onclick="switchDaPane('pane-quality')">🛡️ Quality Report</button>
+      <button class="da-tab-btn" data-pane="pane-hyp" onclick="switchDaPane('pane-hyp')">💡 Hypotheses</button>
+      <button class="da-tab-btn" data-pane="pane-console" onclick="switchDaPane('pane-console')">💻 Console</button>
+    </div>
+
+    <!-- Pane contents -->
+    <div class="da-tab-content">
+
+      <!-- PREVIEW -->
+      <div id="pane-preview" class="da-pane visible">
+        <div style="margin-bottom:12px;">
+          <h2 style="margin:0 0 4px;font-size:14px;">Dataset Preview</h2>
+          <p style="margin:0;font-size:12px;color:var(--muted);">First 10 rows of the active dataset. Load a CSV or click Load Sample to begin.</p>
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="t" id="previewTable" style="font-size:12px;width:100%;">
+            <thead><tr><th style="text-align:center;padding:30px;color:var(--muted);">No dataset loaded. Upload a CSV or click Load Sample.</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- INSIGHTS -->
+      <div id="pane-insights" class="da-pane">
+        <div id="insightsLoading" class="loading" style="display:none;">Running analysis…</div>
+
+        <!-- Exploratory KPIs -->
+        <div id="insightsKPI" class="stats-kpi" style="display:none;">
+          <div class="stat"><div class="label">Rows</div><div class="value" id="kpiRows">—</div></div>
+          <div class="stat"><div class="label">Columns</div><div class="value" id="kpiCols">—</div></div>
+          <div class="stat"><div class="label">Numeric Cols</div><div class="value" id="kpiNum">—</div></div>
+          <div class="stat"><div class="label">Categorical Cols</div><div class="value" id="kpiCat">—</div></div>
+        </div>
+
+        <!-- Column inventory table -->
+        <div id="insightsTableWrap" style="display:none;">
+          <h3 style="margin:0 0 10px;font-size:13px;">Column Inventory</h3>
+          <div class="scroll" style="max-height:320px;">
+            <table class="t" id="statsInventoryTable" style="font-size:12px;">
+              <thead><tr><th>#</th><th>Column</th><th>Type</th><th>Null %</th><th>Unique</th><th>Skewness</th><th>Highlights</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Statistical analysis results -->
+        <div id="statResultWrap" style="display:none;margin-top:16px;">
+          <h3 style="margin:0 0 10px;font-size:13px;">Statistical Deep Dive</h3>
+          <div id="statColGrid" class="stat-item-grid"></div>
+          <h3 style="margin:16px 0 8px;font-size:13px;">Strong Correlations (|r| ≥ 0.5)</h3>
+          <div id="corrPairList"></div>
+        </div>
+
+        <!-- Predictive results -->
+        <div id="predResultWrap" style="display:none;margin-top:16px;">
+          <h3 style="margin:0 0 10px;font-size:13px;">Feature Importance (by variance × target correlation)</h3>
+          <div id="featImportanceList"></div>
+          <h3 style="margin:16px 0 8px;font-size:13px;">Model Recommendations</h3>
+          <div id="modelRecList"></div>
+        </div>
+
+        <div id="insightsEmpty" style="padding:40px;text-align:center;color:var(--muted);">
+          Run <strong>Data Explorer</strong>, <strong>Statistical Analysis</strong>, or <strong>Predictive Modeling</strong> from the sidebar to populate this panel.
+        </div>
+      </div>
+
+      <!-- CHARTS -->
+      <div id="pane-charts" class="da-pane">
+        <div id="chartsLoading" class="loading" style="display:none;">Rendering charts…</div>
+        <div id="chartsEmpty" style="padding:40px;text-align:center;color:var(--muted);">Run <strong>Visualization Specialist</strong> to generate the dashboard.</div>
+        <div id="chartsDashboard" style="display:none;">
+          <div class="chart-grid-2x2">
+            <div class="chart-panel">
+              <h3>Revenue / Metric Trend</h3>
+              <div class="chart-canvas-wrap"><canvas id="daChartTrend"></canvas></div>
+            </div>
+            <div class="chart-panel">
+              <h3>Distribution (Revenue)</h3>
+              <div class="chart-canvas-wrap"><canvas id="daChartDist"></canvas></div>
+            </div>
+            <div class="chart-panel">
+              <h3>Category Breakdown</h3>
+              <div class="chart-canvas-wrap"><canvas id="daChartCat"></canvas></div>
+            </div>
+            <div class="chart-panel">
+              <h3>Correlation Matrix</h3>
+              <div class="chart-canvas-wrap"><canvas id="daChartCorr"></canvas></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- QUALITY -->
+      <div id="pane-quality" class="da-pane">
+        <div id="qualityLoading" class="loading" style="display:none;">Running quality audit…</div>
+        <div id="qualityEmpty" style="padding:40px;text-align:center;color:var(--muted);">Run <strong>Quality Assurance</strong> from the sidebar to audit this dataset.</div>
+        <div id="qualityResult" style="display:none;">
+          <div class="quality-ring-wrap" id="qualityRingWrap"></div>
+          <div style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;">
+            <h3 style="margin:0;font-size:13px;">Per-Column Quality</h3>
+            <span id="qualityGradeTag" class="agent-badge"></span>
+          </div>
+          <div class="col-quality-grid" id="colQualityGrid"></div>
+          <h3 style="margin:8px 0;font-size:13px;">Recommendations</h3>
+          <ul class="rec-list" id="qualityRecList"></ul>
+        </div>
+      </div>
+
+      <!-- HYPOTHESES -->
+      <div id="pane-hyp" class="da-pane">
+        <div id="hypLoading" class="loading" style="display:none;">Generating hypotheses…</div>
+        <div id="hypEmpty" style="padding:40px;text-align:center;color:var(--muted);">Run <strong>Hypothesis Generator</strong> from the sidebar to generate research insights.</div>
+        <div id="hypResult" style="display:none;">
+          <div style="margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;">
+            <div>
+              <h3 style="margin:0 0 2px;font-size:14px;">Research Hypotheses</h3>
+              <p style="margin:0;font-size:12px;color:var(--muted);" id="hypMeta"></p>
+            </div>
+          </div>
+          <div class="hyp-grid" id="hypGrid"></div>
+        </div>
+      </div>
+
+      <!-- CONSOLE -->
+      <div id="pane-console" class="da-pane">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <h3 id="consoleTitle" style="margin:0;font-size:13px;">Console Output</h3>
+          <button id="consoleCopyBtn" class="ghost" style="font-size:11px;padding:4px 10px;">Copy</button>
+        </div>
+        <pre class="da-console" id="consoleOutputArea">No output yet. Use Code Generator or run Report Writer.</pre>
+      </div>
+
+    </div><!-- end da-tab-content -->
+  </div><!-- end da-main -->
+</div><!-- end da-layout -->
+</section>
+
+
+<!-- =================== JOURNAL VIEW =================== -->
+<section id="view-journal" hidden>
+<div class="container" style="grid-template-columns:minmax(220px,1fr) minmax(0,3fr);">
+  <div>
+    <div class="panel">
+      <h2>Journals <button id="journalRefresh" class="ghost" style="font-size:11px;padding:3px 8px;">↻</button></h2>
+      <div class="muted-sm" style="margin-bottom:10px;">Click a date to load. Today's entry is regenerated on demand.</div>
+      <div id="journalList" class="scroll-tall"><div class="loading">—</div></div>
+    </div>
+  </div>
+  <div>
+    <div class="panel">
+      <h2 id="journalTitle">Today's Journal</h2>
+      <div id="journalContent" class="scroll-tall" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:1.55;white-space:pre-wrap;color:var(--text);background:var(--bg);padding:14px;border-radius:6px;border:1px solid var(--border);max-height:none;"><div class="loading">No journal loaded yet.</div></div>
+    </div>
+  </div>
+</div>
+</section>
+
+<script src="/static/app.js?v=9"></script>
+
+</body>
+</html>

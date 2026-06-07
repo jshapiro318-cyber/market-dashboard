@@ -1,0 +1,24 @@
+# Secrets — NEVER commit
+.env
+.env.*
+!.env.example
+
+# Local state (paper trading metadata, journals)
+paper.sqlite
+paper.sqlite-journal
+paper.sqlite-wal
+paper.sqlite-shm
+journal/*.md
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
